@@ -59,9 +59,9 @@ Requirements: Node.js 20.9+, .NET 10 SDK, Python 3.12+, and Docker Compose (only
 4. Start the isolated AI service in a separate terminal:
 
    ```powershell
-   python -m venv ai-service/.venv
+   python -m venv ai-service\.venv
    .\ai-service\.venv\Scripts\Activate.ps1
-   pip install -r ai-service/requirements.txt
+   pip install -r ai-service\requirements.txt
    uvicorn app.main:app --app-dir ai-service --reload --port 8000
    ```
 
