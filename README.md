@@ -2,61 +2,64 @@
 
 **Intelligent payments. Autonomous resolution—with guardrails.**
 
-PayNexus AI is a merchant-focused fintech SaaS concept for investigating payment support cases and automating only explicitly policy-approved resolutions. This repository is the foundation and interactive dashboard prototype; it does not connect to live payment accounts or perform financial actions.
+PayNexus AI is a merchant-focused payment investigation prototype. The authenticated workspace can create tenant-scoped investigation cases, look up a configured PayPal **sandbox** order, and request a read-only, evidence-cited AI analysis. It cannot issue refunds, retry payments, change orders, or access live PayPal accounts.
 
-## Architecture decision
+## What works
 
-Start with a modular, API-first platform for businesses that connect their own payment providers and support their customers. Use hybrid autonomy: the system may investigate using verified, read-only data; routine reversible operations can be enabled by merchant policy; refunds and other high-impact actions require explicit authorization and approval. Complex, ambiguous, or suspicious cases are escalated.
+- **Merchant workspace:** generic OIDC Authorization Code + PKCE sign-in; API access tokens must contain `sub` and a trusted `tenant_id` claim.
+- **Control plane:** ASP.NET Core 10 endpoints for tenant-scoped investigation create/list/detail and analysis; request validation, per-tenant rate limits, and database transactions.
+- **Persistence:** PostgreSQL case, analysis/evidence, and audit-event tables are initialized by the API. Analysis is written together with its audit event.
+- **PayPal:** server-side OAuth client-credentials access to one explicitly configured sandbox tenant, followed only by `GET /v2/checkout/orders/{id}`. The browser and AI service never receive PayPal credentials.
+- **AI runtime:** internal-key-protected FastAPI endpoint backed by an OpenAI-compatible chat-completions API. It receives only verified provider evidence from the API, must cite supplied evidence, and can recommend only read-only investigation or human escalation.
+- **Local infrastructure:** PostgreSQL and Redis Compose services bind to loopback; Redis is reserved for future coordination.
 
-| Layer | Decision | Responsibility |
-| --- | --- | --- |
-| Web app | Next.js + TypeScript | Merchant operations console and future embeddable customer support UI |
-| Control plane | ASP.NET Core 10 | Tenant boundary, identity, policy evaluation, provider/webhook adapters, audit records, API |
-| Agent runtime | Python FastAPI | Isolated orchestration and model/tool execution; no direct payment credentials |
-| Persistence | PostgreSQL | Tenant-scoped payment references, cases, policies, approvals, and append-only audit events |
-| Cache / job coordination | Redis | Short-lived state, rate limiting, and asynchronous work coordination; never the source of financial truth |
-| Provider | PayPal first | Merchant-authorized OAuth connection, verified webhooks, idempotent API operations |
-| Model integration | Provider-neutral adapter | Structured tool calls with schema validation, policy checks, and traceable evidence |
+The public home dashboard remains a clearly labeled sample-data demo. Use **Secure workspace** to sign in and work with persisted cases.
+The customer message is sent to the configured model provider for analysis. Confirm your organization is permitted to share that support data with that provider, and review its retention and privacy terms before use.
 
-The .NET API is the security and financial-action boundary. The agent service must request actions from it; it must never receive provider secrets or execute payment mutations directly. All reads and actions must be tenant-scoped and audited. Verify provider signatures and transaction state server-side; never trust model output, browser claims, or webhook payloads without verification.
+## Not included yet
 
-## Repository status
+- PayPal partner onboarding, per-merchant OAuth credential vaulting, webhooks, or live payment access. The current provider adapter intentionally supports one sandbox tenant only.
+- Merchant self-service tenant provisioning, organization/role administration, or an identity-provider deployment. Connect an OIDC issuer that supplies the required API access-token claims.
+- Customer-facing support widget, voice, or a full MCP/LangGraph agent.
+- Refunds, payment retries, notification retries, approval execution, or any other financial mutation.
+- Production secret management, key rotation, migrations/versioned schema rollout, retention controls, deployment infrastructure, and production observability.
 
-Included now:
+Do not treat AI output as authoritative payment state. PayPal is the only evidence source in this increment; merchant order-system reconciliation is not implemented. Missing or conflicting evidence must be escalated.
 
-- Responsive merchant dashboard prototype with clearly labeled sample data.
-- .NET and Python service health endpoints.
-- Local PostgreSQL and Redis development dependencies.
-- Architecture and safety decisions for the first product increment.
+## Configure local development
 
-Not implemented or connected yet:
+Requirements: Node.js 20.9+, .NET 10 SDK, Python 3.12+, and Docker Compose.
 
-- Authentication, tenant provisioning, database migrations, or durable application endpoints.
-- PayPal OAuth, webhooks, live transaction reads, refunds, or retries.
-- LLM provider, LangGraph orchestration, MCP tools, or voice support.
-
-The sample dashboard is not backed by a payment provider and must not be used to make operational decisions.
-
-## Run locally
-
-Requirements: Node.js 20.9+, .NET 10 SDK, Python 3.12+, and Docker Compose (only for PostgreSQL/Redis).
-
-1. Copy `.env.example` to `.env` and set a local-only database password.
-2. Start local dependencies:
+1. Copy `.env.example` to `.env`. Set the same long local-only PostgreSQL password in `POSTGRES_PASSWORD` and the connection string, then generate a random service key and put it in both `AI__ServiceKey` and `AI_SERVICE_KEY`. Set the OIDC and provider/model values described below. Keep `.env` private; it is ignored by Git.
+2. Register a **public OIDC client** with Authorization Code + PKCE:
+   - Redirect URI: `http://localhost:3000/auth/callback`
+   - Post-logout URI: `http://localhost:3000/`
+   - Add the API scope/audience expected by the provider.
+   - Configure API access tokens with the expected audience, a stable `sub`, and a trusted `tenant_id`.
+   - Set `Authentication__Authority` to the issuer URL, `Authentication__Audience` to the API audience, and the matching `NEXT_PUBLIC_OIDC_*` variables in `.env`.
+3. Create a PayPal sandbox app for the test merchant. Set `PayPal__ClientId`, `PayPal__ClientSecret`, and `PayPal__SandboxTenantId`. The tenant ID must exactly match that tenant's trusted OIDC `tenant_id` claim. No live endpoint is available in this code.
+4. Configure the Python service's `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`. Set a long random `AI_SERVICE_KEY`, matching `AI__ServiceKey` in the API. Never put provider keys in browser variables.
+5. Start PostgreSQL and Redis:
 
    ```powershell
    docker compose up -d postgres redis
    ```
 
-3. Start the API:
+6. In each PowerShell terminal that starts a service, load the local environment:
 
    ```powershell
-   dotnet run --project api
+   . .\scripts\load-env.ps1
    ```
 
-   The API listens on `http://localhost:5000` or the port printed by `dotnet run`. Check `/health/live` and `/health/ready`.
+7. Start the API:
 
-4. Start the isolated AI service in a separate terminal:
+   ```powershell
+   dotnet run --project api --urls http://localhost:8080
+   ```
+
+   Check `http://localhost:8080/health/live` and `/health/ready`. Readiness stays `503` until PostgreSQL and OIDC are configured. The first configured start creates the required tables.
+
+8. Start the AI service in a separate terminal (load `.env` there too):
 
    ```powershell
    python -m venv ai-service\.venv
@@ -65,24 +68,49 @@ Requirements: Node.js 20.9+, .NET 10 SDK, Python 3.12+, and Docker Compose (only
    uvicorn app.main:app --app-dir ai-service --reload --port 8000
    ```
 
-   Check `http://localhost:8000/health/live` and `/health/ready`. Agent tools are disabled.
+   Health endpoints are `http://localhost:8000/health/live` and `/health/ready`. The analysis endpoint is internal and requires `X-Service-Key`.
 
-5. Start the web app:
+9. Start the web app in a third terminal (load `.env` before Next.js starts so its public OIDC/API settings are available):
 
    ```powershell
+   . .\scripts\load-env.ps1
    cd web
    npm run dev
    ```
 
-   Open `http://localhost:3000`.
+   Open `http://localhost:3000`, sign in, and go to **Secure workspace**. Create a case using a sandbox PayPal order ID. Analysis requires both the configured sandbox app and AI service.
 
-## First production milestones
+If OIDC, PayPal sandbox, or AI settings are absent, related functions return an explicit configuration error rather than sample or success-shaped data. The local Compose stack does not include an identity provider.
 
-1. Establish authentication and tenant isolation; add authorization tests before provider data is introduced.
-2. Add PostgreSQL schema/migrations, secret management, and append-only audit events.
-3. Add PayPal merchant OAuth and signed webhook ingestion; verify events against the provider and deduplicate by provider event ID.
-4. Ship read-only transaction investigation with evidence citations and explicit escalation for missing or inconsistent state.
-5. Add policy evaluation and approval workflows; only then implement idempotent, reversible actions.
-6. Add model orchestration behind typed tools, human-review thresholds, rate limits, observability, and adversarial testing.
+## API
 
-No live credentials belong in `.env`, source control, model prompts, or browser code. Use a secret manager in deployed environments. Do not collect or store card numbers or CVVs.
+All `/api` endpoints require a valid OIDC bearer access token with `sub` and `tenant_id` claims. Data access is scoped to the token tenant; the tenant is never accepted from the request body.
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| `GET` | `/api/investigations?limit=50` | List the caller's cases (1–100 limit) |
+| `POST` | `/api/investigations` | Create a case with `transactionReference` and `customerMessage` |
+| `GET` | `/api/investigations/{id}` | Fetch a tenant-scoped case and its latest saved analysis, if any |
+| `POST` | `/api/investigations/{id}/analyze` | Fetch the sandbox order, request evidence-grounded analysis, and persist the evidence/result/audit event |
+
+Example create request:
+
+```json
+{
+  "transactionReference": "5O190127TN364715T",
+  "customerMessage": "My order is still pending."
+}
+```
+
+Messages that appear to contain card numbers or security codes are rejected. Never submit card numbers, CVVs, passwords, or provider credentials.
+
+## Validate
+
+```powershell
+npm --prefix web run lint
+npm --prefix web run build
+dotnet build api\PayNexus.Api.csproj
+.\ai-service\.venv\Scripts\python.exe -m unittest discover -s ai-service\tests -v
+```
+
+Docker must be installed to validate the Compose configuration and run the local database. No live payment actions are implemented or enabled.

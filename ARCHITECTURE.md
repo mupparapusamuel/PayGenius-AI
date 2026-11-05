@@ -1,82 +1,81 @@
 # PayNexus AI — Architecture and product boundaries
 
-## Product scope
+## Current release boundary
 
-Initial users are merchants and their support teams. The product helps their customers resolve payment issues through a merchant-branded chat surface and gives operators a console for cases, evidence, and approvals. The first release is read-only investigation; expand autonomy only after the relevant authorization, policy, and audit controls exist.
+This increment provides a single sandbox-merchant vertical slice: OIDC-authenticated case creation, tenant-scoped PostgreSQL storage, PayPal sandbox order lookup, internal evidence-only AI analysis, and audit records. It is not a production multi-tenant payment integration. Real multi-merchant onboarding, per-tenant credential storage, webhook verification, approval controls, and live actions remain gated future work.
 
 ## System context
 
 ```text
-Customer widget / Merchant console (Next.js)
+Merchant browser (Next.js + OIDC PKCE)
                     |
+                    | OIDC bearer access token
                     v
-ASP.NET Core control plane ---- PostgreSQL (tenant-scoped records, audit)
+ASP.NET Core control plane ---- PostgreSQL
         |           |
-        |           +---------- Redis (ephemeral coordination only)
+        |           +---------- Redis (not used by current case flow)
         |
-        +---- Python agent runtime (narrow, typed tool interface)
+        +---- PayPal sandbox API (server-side credentials, one allowlisted tenant)
         |
-        +---- PayPal adapter (merchant OAuth, verified webhooks, API)
+        +---- Python analysis service (internal shared key, no payment credentials)
+                    |
+                    +---- Configured OpenAI-compatible model API
 ```
-
-The control plane owns identity, tenant isolation, policy enforcement, provider credentials, and all financial mutations. The Python runtime owns reasoning and orchestration only. The model receives the minimum redacted context needed for a case and returns structured proposals, not authority.
 
 ## Trust boundaries and invariants
 
-- Every request and stored record is scoped to an authenticated tenant; tenant identity is derived from trusted server-side identity claims, never from an untrusted request body.
-- Provider OAuth credentials remain encrypted in a secret store and are available only to the API's PayPal adapter.
-- Verify webhook signatures before processing; deduplicate events and make handlers safe to replay.
-- The database/provider, not the LLM, is authoritative for payment state. Re-fetch current state immediately before any mutation.
-- Every tool call, evidence item, policy decision, approval, and provider result is traceable in an append-only audit record.
-- Mutations require server-side policy checks, idempotency keys, bounded retries, and explicit authorization. Refunds and other high-impact actions require step-up/customer authorization and configured approval.
-- Never ask for or persist full card numbers, CVVs, passwords, or provider credentials in chat.
-- Fail closed when identity, tenant, provider state, policy, or approval cannot be verified.
+- The API validates issuer, audience, and token signature using OIDC discovery. API requests require a trusted `sub` and `tenant_id` claim; the API does not accept a tenant identifier from the caller.
+- Every case lookup, insert, and update uses tenant-scoped predicates. Case creation and its audit event are committed in one database transaction. Analysis, provider evidence, case status, and its audit event are committed together.
+- The current PayPal client uses the fixed sandbox API host and server-side client credentials. It is enabled for exactly the configured sandbox tenant. It only retrieves orders; no mutation endpoints or live host exist.
+- The API sends only the order's status, intent, and creation timestamp plus the case message to the AI service. Provider credentials and access tokens never leave the API.
+- The AI service is guarded by a shared internal key and validates that cited evidence IDs were actually supplied. It has no payment tools and is instructed to use only verified evidence, recommend only read-only next steps, and escalate insufficient or conflicting evidence.
+- The database/provider, not the LLM, is authoritative. The AI response is a triage aid, not proof of settlement or merchant order delivery.
+- Likely card numbers and security-code terms in support messages are rejected. Never submit or store full card numbers, CVVs, passwords, or provider secrets.
+- OIDC and PostgreSQL are required for API tenant data. Missing provider/model settings cause explicit service errors. Production deployment must use HTTPS and a managed secret store.
 
-## Execution levels
+## Current execution levels
 
-| Level | Capability | Guardrail |
+| Level | Current support | Guardrail |
 | --- | --- | --- |
-| 1 — Investigate | Read transaction status, reconcile event/order references, explain verified evidence | Read-only credentials/scopes; cite provider and merchant-system evidence |
-| 2 — Routine operation | Retry an eligible notification or other bounded reversible operation | Merchant policy, idempotency, rate limits, durable audit, observed outcome |
-| 3 — Financial action | Refund or another high-impact/irreversible operation | Eligibility check, explicit authorization, configured approval, step-up verification, audit |
+| 1 — Investigate | Create/list cases; retrieve one PayPal sandbox order; summarize verified order facts | OIDC tenant scope; sandbox-only fixed host; model citations checked against evidence |
+| 2 — Routine operation | Not implemented | No retry or notification mutation route exists |
+| 3 — Financial action | Not implemented | No refund or other financial mutation route exists |
 
-The agent never promotes itself between levels. Policy and authorization are evaluated by the control plane for every action.
-
-## Initial service responsibilities
+## Services
 
 ### Next.js web
 
-- Merchant dashboard and case review/approval UI.
-- Future merchant-branded customer widget.
-- No provider secrets, trusted authorization decisions, or direct provider calls in browser code.
+- The public dashboard is sample-data-only and labeled as a demo.
+- The separate merchant workspace uses a public OIDC Authorization Code + PKCE client and sends access tokens only to the configured API.
+- No payment credentials or authorization secrets are included in browser code.
 
 ### ASP.NET Core control plane
 
-- Authentication, tenant membership and role checks.
-- Provider connection lifecycle, webhook verification, transaction data access.
-- Case lifecycle, policy evaluation, authorization, idempotent action execution.
-- Audit writing, API rate limiting, and the typed interface to the agent runtime.
+- Validates OIDC access tokens and enforces a `tenant_id` claim and tenant-scoped database operations.
+- Persists cases, provider evidence, analysis, and audit events in PostgreSQL.
+- Retrieves PayPal sandbox orders and calls the internal AI analysis service.
+- Enforces request size/content limits, rate limits, CORS origin restrictions, and read-only provider behavior.
 
-### Python agent runtime
+### Python AI service
 
-- Intent classification, workflow orchestration, and evidence-backed response drafting.
-- Receives short-lived, tenant-scoped context from the control plane.
-- Invokes only allowlisted typed tools exposed by the control plane; no raw SQL, arbitrary network access, or direct gateway credentials.
+- Receives a bounded customer message and verified provider evidence only.
+- Uses an OpenAI-compatible chat-completions endpoint with a structured JSON response.
+- Rejects invalid model output and citations to evidence that was not provided.
+- Does not hold gateway credentials, connect directly to payment APIs, or execute tools.
 
 ### PostgreSQL and Redis
 
-- PostgreSQL is the durable source of truth for tenants, cases, policies, approvals, provider event IDs, idempotency keys, and audit records.
-- Redis is disposable infrastructure for short-lived coordination and rate limits. A cache outage must not create duplicate financial actions.
+- PostgreSQL is the source of truth for cases, analysis/evidence, and audit events. The API bootstraps the initial schema; a versioned migration system is still needed before production.
+- Redis is loopback-only in the local Compose file and is not required by the current investigation flow.
 
-## First release sequence
+## Remaining before production
 
-1. Authentication, tenant isolation, role model, and audit schema.
-2. PayPal OAuth and verified webhook ingestion in sandbox; event replay and duplicate delivery tests.
-3. Read-only transaction investigation tied to provider facts and merchant order status.
-4. Operator review and escalation workflow.
-5. Policy-gated routine actions with idempotency and fault-injection tests.
-6. Explicitly approved financial actions only after legal, risk, and operations review.
+1. Select/operate the OIDC identity provider, provision tenants/roles, and add security-focused authorization integration tests.
+2. Replace the single sandbox tenant setting with PayPal partner merchant onboarding and a per-tenant encrypted credential vault; verify signed webhooks and deduplicate events.
+3. Add a versioned schema migration/rollback process, encryption/key rotation, data retention and deletion controls.
+4. Add merchant-system order evidence so the system can distinguish provider settlement from fulfillment/order-confirmation failures.
+5. Add policy evaluation, approvals, idempotency, and fault-injection tests before any reversible operation.
+6. Perform risk/legal review and step-up/customer authorization before any financial action.
+7. Add deployment infrastructure, TLS, managed secrets, observability, incident response, and model/provider contract tests.
 
-## Operational requirements before production
-
-Use managed identity/secret storage, TLS, encryption at rest, strict data retention, redaction, tenant-aware authorization tests, dependency scanning, structured logs with correlation IDs, metrics/traces, incident runbooks, and sandbox/contract tests for each provider API. Keep model version, prompt/config version, tool arguments, policy result, and evidence provenance in the audit trail without logging sensitive credentials or card data.
+No live payment action should be enabled until these controls are in place and independently reviewed.

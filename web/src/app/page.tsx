@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAuth } from "./auth/AuthProvider";
 
 type PaymentStatus = "Paid" | "Failed" | "Pending" | "Review";
 
@@ -112,6 +113,7 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
 }
 
 export default function Home() {
+  const auth = useAuth();
   const [activeNav, setActiveNav] = useState("Overview");
   const [activeFilter, setActiveFilter] = useState("All activity");
   const [query, setQuery] = useState("");
@@ -195,6 +197,8 @@ export default function Home() {
           <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
             <span className="environment-pill"><span /> Sandbox environment</span>
+            {auth.configured && !auth.user && <button className="header-link" onClick={() => void auth.signIn().catch(() => showDemoNotice("Secure sign-in could not be started."))}>Sign in</button>}
+            {auth.user && <a className="header-link" href="/workspace">Secure workspace →</a>}
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showDemoNotice("You're all caught up.")}>♧<i /></button>
             <button className="top-avatar" aria-label="Open profile">JD</button>
           </div>
