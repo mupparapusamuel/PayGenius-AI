@@ -1,0 +1,29 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+**/secrets.json
+
+# .NET
+**/bin/
+**/obj/
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+.pytest_cache/
+
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/out/
+**/coverage/
+npm-debug.log*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
