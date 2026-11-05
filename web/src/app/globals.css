@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #211b36;
-  --muted: #827c91;
-  --line: #eeedf2;
-  --purple: #6d4aff;
-  --purple-dark: #5836e5;
-  --canvas: #faf9fc;
-  --font-sans: Arial, Helvetica, sans-serif;
+  --ink: #172f36;
+  --muted: #708187;
+  --line: #e4ecea;
+  --purple: #0f766e;
+  --purple-dark: #115e59;
+  --canvas: #f4f7f6;
+  --font-sans: Inter, "Segoe UI", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -433,4 +433,122 @@ tbody tr:hover, tbody tr.selected-row { background: #fcfbff; }
   .playground-input { padding: 10px; }
   .playground-input button { padding: 0 9px; }
   .demo-agent-link { font-size: 8px; }
+}
+
+/* Premium fintech palette: deep evergreen, soft mineral neutrals, and restrained mint. */
+body { color: var(--ink); background: var(--canvas); }
+.sidebar {
+  border-right-color: #1d3a3b;
+  color: #e6f0ed;
+  background: linear-gradient(180deg,#112d30 0%,#10292d 100%);
+  box-shadow: 8px 0 28px #173a3510;
+}
+.sidebar .brand { color: #f3f8f6; }
+.sidebar .brand-mark, .playground-header .brand-mark, .workspace-header .brand-mark {
+  background: linear-gradient(145deg,#29b49a,#08766e);
+  box-shadow: 0 4px 12px #0e8d7860;
+}
+.sidebar .brand-ai { color: #6fd8bd; }
+.workspace-switcher { border-color: #2a4848; background: #193638; }
+.workspace-avatar { color: #a4ead6; background: #24514d; }
+.workspace-copy strong { color: #edf5f2; }
+.workspace-copy small, .switcher-chevron { color: #a2b8b2; }
+.nav-label { color: #7e9a94; }
+.nav-item { color: #b3c5bf; }
+.nav-item:hover { color: #f1faf6; background: #1b3d3d; }
+.nav-item-active { color: #85e2c7; background: #1d4140; }
+.nav-item-active::before { background: #4dd2ae; }
+.nav-count { color: #9ce8d1; background: #24534e; }
+.usage-card { border-color: #294645; background: linear-gradient(145deg,#1b3a3c,#173234); }
+.usage-heading { color: #d7e7e1; }
+.usage-heading span:last-child, .usage-card button { color: #7bdcc0; }
+.usage-track { background: #294747; }
+.usage-track span { background: linear-gradient(90deg,#23ae91,#77dfbd); }
+.usage-card p { color: #94aea6; }
+.support-icon { color: #a8c0b9; }
+.profile-button { border-top-color: #294544; }
+.profile-avatar { color: #a4ead6; background: #24514d; }
+.sidebar .profile-button .workspace-copy strong { color: #e5f0ec; }
+.sidebar .profile-button .workspace-copy small { color: #91aaa2; }
+.topbar, .workspace-header, .playground-header {
+  border-bottom-color: var(--line);
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 3px 14px #183a3506;
+}
+.environment-pill { border-color: #dfeae6; color: #54706b; background: #f9fcfb; }
+.content { max-width: 1600px; }
+.demo-banner { border-color: #d6ebe4; color: #58756e; background: linear-gradient(105deg,#eef8f4,#f7fbf9); }
+.demo-banner strong { color: #176f60; }
+.demo-banner-icon, .insight-note > span { border-color: #72bda9; color: #147d6c; }
+.demo-agent-link, .table-footer button, .activity-link, .small-link { color: #0f766e; }
+.demo-agent-link:hover, .activity-link:hover { color: #115e59; }
+.page-heading p { color: #718187; }
+.sparkle, .header-link { color: #128071; }
+.primary-button { background: linear-gradient(110deg,#168b78,#10675f); box-shadow: 0 4px 12px #10766824; }
+.primary-button:hover { background: #0d5f57; }
+.metric-grid { gap: 15px; }
+.metric-card, .panel, .workspace-card, .auth-card, .playground-card {
+  border-color: #e3ebe8;
+  border-radius: 12px;
+  box-shadow: 0 5px 18px #173a3508, 0 1px 2px #173a3505;
+}
+.metric-card { padding: 16px 15px 14px; }
+.metric-card > strong, .amount { color: #19343a; }
+.metric-top { color: #718187; }
+.icon-violet, .status-review { color: #0f766e; background: #e5f4ef; }
+.icon-green, .status-paid { color: #16835f; background: #e7f5ee; }
+.icon-amber, .status-pending { color: #a96a19; background: #fff4e2; }
+.icon-blue { color: #33799a; background: #e9f3f7; }
+.spark-purple { color: #28a58d; }
+.trend-positive { color: #178463; }
+.panel-heading h2 { color: #233e43; }
+.panel-heading p, .metric-foot, .breadcrumb { color: #819096; }
+.filter-tabs button:hover { color: #0f766e; background: #f1f8f5; }
+.filter-tabs .filter-active { color: #0e7569; background: #eaf5f1; }
+.filter-count { color: #0e7569; background: #d9eee7; }
+.search-field { border-color: #e3ebe8; border-radius: 7px; }
+.search-field:focus-within { border-color: #71bdaa; box-shadow: 0 0 0 3px #dff3ec; }
+thead { background: #f7faf9; }
+th { color: #82938f; }
+td { border-top-color: #edf2f0; }
+tbody tr:hover, tbody tr.selected-row { background: #f4f9f7; }
+.avatar-lavender { color: #14776c; background: #e1f1ec; }
+.copilot-panel { border-color: #dcebe6; }
+.copilot-heading { border-bottom-color: #e7efec; background: linear-gradient(110deg,#f3faf7,#fff); }
+.copilot-orb { border-color: #d4ebe3; color: #0d7b6d; background: linear-gradient(145deg,#f1faf6,#e1f3eb); }
+.copilot-brand strong, .copilot-greeting strong { color: #244249; }
+.online-indicator i, .live-tag i { background: #27ae83; box-shadow: 0 0 0 3px #e1f5ec; }
+.insight-card { border-color: #e2ece8; background: #fbfdfc; }
+.insight-note { color: #687f79; background: #eff7f3; }
+.outline-button { border-color: #d8e9e3; color: #137668; }
+.outline-button:hover { border-color: #a5d5c6; background: #f4faf7; }
+.activity-search { color: #147a6d; background: #e8f4ef; }
+.integration-row { border-top-color: #edf2f0; }
+.connect-link { border-top-color: #edf2f0; color: #11776a; }
+.workspace-page, .auth-page, .agent-playground { background: var(--canvas); }
+.workspace-content, .playground-content { padding-top: 44px; }
+.workspace-card, .auth-card { background: #fff; }
+.workspace-card-heading h2, .analysis-result h3 { color: #244047; }
+.read-only-badge, .case-status { color: #0d7568; background: #e8f4ef; }
+.investigation-list-item:hover, .investigation-list-item.is-selected { border-color: #b8d9cd; background: #f7fbf9; }
+.analysis-result { border-color: #e0ebe6; background: #f9fcfa; }
+.playground-title > p:last-child { color: #72838a; }
+.playground-safety { border-color: #d7e9e3; color: #59736d; background: linear-gradient(105deg,#edf7f3,#f7fbf9); }
+.playground-safety > span { border-color: #79bda9; color: #12786b; }
+.playground-safety strong { color: #176c5e; }
+.mode-toggle button.mode-active { color: #0f766e; }
+.mode-label-live i { background: #c38a35; box-shadow: 0 0 0 3px #fff3dc; }
+.playground-empty .copilot-orb { border-color: #cde8df; color: #0c7d6d; background: linear-gradient(145deg,#edf8f3,#dcf1e8); }
+.prompt-suggestions button:hover { border-color: #b7dacc; color: #0f766e; background: #f6fbf8; }
+.message-avatar { color: #0d7568; background: #e6f3ee; }
+.tool-call summary strong { color: #176b61; }
+.tool-readonly { color: #197c5d; }
+.playground-input input:focus { border-color: #6fb9a5; box-shadow: 0 0 0 3px #e0f2eb; }
+.playground-input button { background: linear-gradient(110deg,#168b78,#10675f); }
+.available-tools code { border-color: #e4ece9; color: #56716b; background: #f6faf8; }
+.back-link:hover { color: #0f766e; }
+.playground-header .brand > span:last-child, .workspace-header .brand > span:last-child { display: inline; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
