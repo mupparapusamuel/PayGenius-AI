@@ -5,17 +5,17 @@ import os
 from typing import Annotated
 from urllib.parse import urlsplit
 
-import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("paynexus-ai")
 
 app = FastAPI(
     title="PayNexus AI Service",
-    description="Evidence-grounded analysis only. Payment tools and mutations are disabled.",
-    version="0.2.0",
+    description="Evidence-grounded analysis through Databricks Unity Gateway. Payment tools are disabled.",
+    version="0.3.0",
 )
 
 
@@ -57,6 +57,22 @@ def require_service_key(
         raise HTTPException(status_code=401, detail="Invalid service credentials.")
 
 
+def databricks_host() -> str | None:
+    host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+    parsed_host = urlsplit(host)
+    if (
+        parsed_host.scheme != "https"
+        or not parsed_host.hostname
+        or parsed_host.username
+        or parsed_host.password
+        or parsed_host.path not in ("", "/")
+        or parsed_host.query
+        or parsed_host.fragment
+    ):
+        return None
+    return host
+
+
 @app.get("/health/live")
 def live() -> dict[str, str]:
     return {"status": "healthy", "service": "paynexus-ai"}
@@ -65,35 +81,33 @@ def live() -> dict[str, str]:
 @app.get("/health/ready")
 def ready() -> dict[str, str]:
     service_key = os.getenv("AI_SERVICE_KEY")
-    configured = bool(service_key and len(service_key) >= 32 and os.getenv("OPENAI_API_KEY"))
+    configured = bool(
+        service_key
+        and len(service_key) >= 32
+        and os.getenv("DATABRICKS_TOKEN")
+        and databricks_host()
+        and os.getenv("DATABRICKS_MODEL", "system.ai.gpt-oss-120b")
+    )
     return {
         "status": "ready" if configured else "not-ready",
         "service": "paynexus-ai",
-        "model_provider": "configured" if configured else "not-configured",
+        "model_provider": "databricks-unity-gateway" if configured else "not-configured",
         "payment_tools": "disabled",
     }
 
 
 async def call_model(payload: AnalyzeRequest) -> Analysis:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Model provider credentials are not configured.")
-
-    configured_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    parsed_base_url = urlsplit(configured_base_url)
-    if not parsed_base_url.hostname or not (
-        parsed_base_url.scheme == "https"
-        or (
-            parsed_base_url.scheme == "http"
-            and parsed_base_url.hostname in {"localhost", "127.0.0.1", "::1"}
-        )
-    ):
+    token = os.getenv("DATABRICKS_TOKEN")
+    host = databricks_host()
+    if not token or len(token) < 32:
+        raise HTTPException(status_code=503, detail="Databricks token is not configured.")
+    if not host:
         raise HTTPException(
             status_code=503,
-            detail="The model provider URL must use HTTPS except for a loopback development endpoint.",
+            detail="DATABRICKS_HOST must be an HTTPS workspace origin without a path.",
         )
-    base_url = configured_base_url.rstrip("/")
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    model = os.getenv("DATABRICKS_MODEL", "system.ai.gpt-oss-120b")
     evidence_ids = {item.evidence_id for item in payload.evidence}
     system_prompt = (
         "You analyze payment support cases using only the supplied verified evidence. "
@@ -111,36 +125,41 @@ async def call_model(payload: AnalyzeRequest) -> Analysis:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0)) as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "response_format": {"type": "json_object"},
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": json.dumps(user_payload, ensure_ascii=True),
-                        },
-                    ],
-                    "temperature": 0,
-                },
+        async with AsyncOpenAI(
+            api_key=token,
+            base_url=f"{host}/ai-gateway/mlflow/v1",
+            timeout=20.0,
+            max_retries=1,
+        ) as client:
+            response = await client.responses.create(
+                model=model,
+                max_output_tokens=600,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(user_payload, ensure_ascii=True),
+                    },
+                ],
             )
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            result = Analysis.model_validate_json(content)
-    except httpx.TimeoutException as exception:
-        logger.warning("Model provider timed out during case analysis.")
+            result = Analysis.model_validate_json(response.output_text)
+    except APITimeoutError as exception:
+        logger.warning("Databricks Unity Gateway timed out during case analysis.")
         raise HTTPException(status_code=504, detail="Model provider timed out.") from exception
-    except httpx.HTTPStatusError as exception:
-        logger.warning("Model provider returned HTTP %s.", exception.response.status_code)
+    except APIStatusError as exception:
+        logger.warning("Databricks Unity Gateway returned HTTP %s.", exception.status_code)
         raise HTTPException(status_code=502, detail="Model provider rejected the analysis request.") from exception
-    except (httpx.RequestError, KeyError, IndexError, TypeError, ValueError) as exception:
-        logger.warning("Model analysis response was unavailable or invalid: %s", type(exception).__name__)
+    except APIConnectionError as exception:
+        logger.warning("Databricks Unity Gateway connection failed.")
+        raise HTTPException(status_code=502, detail="Model provider is unavailable.") from exception
+    except (ValidationError, TypeError, ValueError) as exception:
+        logger.warning("Model analysis response was invalid: %s", type(exception).__name__)
         raise HTTPException(status_code=502, detail="Model provider returned an invalid analysis response.") from exception
 
+    if not set(result.evidence_ids).issubset(evidence_ids):
+        raise HTTPException(status_code=502, detail="Model analysis referenced unknown evidence.")
+    if not result.needs_human_review and not result.evidence_ids:
+        raise HTTPException(status_code=502, detail="Model analysis cannot resolve a case without evidence.")
     return result
 
 
@@ -150,10 +169,4 @@ async def call_model(payload: AnalyzeRequest) -> Analysis:
     dependencies=[Depends(require_service_key)],
 )
 async def analyze(request: AnalyzeRequest) -> Analysis:
-    result = await call_model(request)
-    evidence_ids = {item.evidence_id for item in request.evidence}
-    if not set(result.evidence_ids).issubset(evidence_ids):
-        raise HTTPException(status_code=502, detail="Model analysis referenced unknown evidence.")
-    if not result.needs_human_review and not result.evidence_ids:
-        raise HTTPException(status_code=502, detail="Model analysis cannot resolve a case without evidence.")
-    return result
+    return await call_model(request)

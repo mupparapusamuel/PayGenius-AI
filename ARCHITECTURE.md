@@ -19,7 +19,7 @@ ASP.NET Core control plane ---- PostgreSQL
         |
         +---- Python analysis service (internal shared key, no payment credentials)
                     |
-                    +---- Configured OpenAI-compatible model API
+                    +---- Databricks Unity Gateway Responses API
 ```
 
 ## Trust boundaries and invariants
@@ -28,7 +28,7 @@ ASP.NET Core control plane ---- PostgreSQL
 - Every case lookup, insert, and update uses tenant-scoped predicates. Case creation and its audit event are committed in one database transaction. Analysis, provider evidence, case status, and its audit event are committed together.
 - The current PayPal client uses the fixed sandbox API host and server-side client credentials. It is enabled for exactly the configured sandbox tenant. It only retrieves orders; no mutation endpoints or live host exist.
 - The API sends only the order's status, intent, and creation timestamp plus the case message to the AI service. Provider credentials and access tokens never leave the API.
-- The AI service is guarded by a shared internal key and validates that cited evidence IDs were actually supplied. It has no payment tools and is instructed to use only verified evidence, recommend only read-only next steps, and escalate insufficient or conflicting evidence.
+- The AI service is guarded by a shared internal key and validates that cited evidence IDs were actually supplied. It uses the OpenAI Python SDK with Databricks Unity Gateway's OpenAI-compatible Responses API and the configured `system.ai` model. The Databricks token is loaded from a per-user Windows DPAPI-encrypted file and is never sent to the browser. The service has no payment tools and is instructed to use only verified evidence, recommend only read-only next steps, and escalate insufficient or conflicting evidence.
 - The database/provider, not the LLM, is authoritative. The AI response is a triage aid, not proof of settlement or merchant order delivery.
 - Likely card numbers and security-code terms in support messages are rejected. Never submit or store full card numbers, CVVs, passwords, or provider secrets.
 - OIDC and PostgreSQL are required for API tenant data. Missing provider/model settings cause explicit service errors. Production deployment must use HTTPS and a managed secret store.
@@ -59,7 +59,7 @@ ASP.NET Core control plane ---- PostgreSQL
 ### Python AI service
 
 - Receives a bounded customer message and verified provider evidence only.
-- Uses an OpenAI-compatible chat-completions endpoint with a structured JSON response.
+- Uses the OpenAI SDK Responses API at Databricks Unity Gateway's `/ai-gateway/mlflow/v1/responses` endpoint with the configured model.
 - Rejects invalid model output and citations to evidence that was not provided.
 - Does not hold gateway credentials, connect directly to payment APIs, or execute tools.
 
