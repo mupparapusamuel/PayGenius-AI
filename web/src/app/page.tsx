@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAuth } from "./auth/AuthProvider";
 
@@ -160,15 +161,22 @@ export default function Home() {
             <div className="nav-group" key={group.section}>
               <p className="nav-label">{group.section}</p>
               {group.items.map((item) => (
-                <button
-                  className={`nav-item ${activeNav === item ? "nav-item-active" : ""}`}
-                  key={item}
-                  onClick={() => setActiveNav(item)}
-                >
-                  <Icon name={item} />
-                  <span>{item}</span>
-                  {item === "Investigations" && <span className="nav-count">4</span>}
-                </button>
+                item === "AI agents" ? (
+                  <Link className="nav-item" href="/agent-playground" key={item}>
+                    <Icon name={item} />
+                    <span>{item}</span>
+                  </Link>
+                ) : (
+                  <button
+                    className={`nav-item ${activeNav === item ? "nav-item-active" : ""}`}
+                    key={item}
+                    onClick={() => setActiveNav(item)}
+                  >
+                    <Icon name={item} />
+                    <span>{item}</span>
+                    {item === "Investigations" && <span className="nav-count">4</span>}
+                  </button>
+                )
               ))}
             </div>
           ))}
@@ -208,7 +216,7 @@ export default function Home() {
           <div className="demo-banner">
             <span className="demo-banner-icon">i</span>
             <span><strong>Demo workspace</strong> — sample transactions only. No live payment data or actions.</span>
-            <button onClick={() => showDemoNotice("Connect a provider from Integrations when setup is available.")}>Explore integrations <span>→</span></button>
+            <Link className="demo-agent-link" href="/agent-playground">Try the AI agent <span>→</span></Link>
           </div>
 
           <div className="page-heading">
@@ -329,7 +337,7 @@ export default function Home() {
                 <div className="panel-heading compact-heading"><div><h2>Agent activity</h2><p>Recent autonomous work</p></div><span className="live-tag"><i /> LIVE</span></div>
                 <div className="activity-entry"><span className="activity-icon activity-check">✓</span><div><p><strong>Subscription renewal confirmed</strong></p><small>Renewal matched · Lana Steiner</small><span className="activity-time">12 min ago</span></div></div>
                 <div className="activity-entry"><span className="activity-icon activity-search">⌕</span><div><p><strong>Payment investigation started</strong></p><small>Order confirmation mismatch</small><span className="activity-time">28 min ago</span></div></div>
-                <button className="activity-link" onClick={() => setActiveNav("AI agents")}>View agent activity <span>→</span></button>
+                <Link className="activity-link" href="/agent-playground">Try the agent playground <span>→</span></Link>
               </section>
             </aside>
           </div>

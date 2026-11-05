@@ -11,6 +11,7 @@ PayGenius AI is a merchant-focused payment investigation prototype. The authenti
 - **Persistence:** PostgreSQL case, analysis/evidence, and audit-event tables are initialized by the API. Analysis is written together with its audit event.
 - **PayPal:** server-side OAuth client-credentials access to one explicitly configured sandbox tenant, followed only by `GET /v2/checkout/orders/{id}`. The browser and AI service never receive PayPal credentials.
 - **AI runtime:** internal-key-protected FastAPI endpoint calling Databricks Unity Gateway through the OpenAI SDK Responses API (`/ai-gateway/mlflow/v1/responses`). It receives only verified provider evidence from the API, must cite supplied evidence, and can recommend only read-only investigation or human escalation.
+- **Agent playground:** `/agent-playground` offers an always-available scripted simulation and an optional Databricks tool-calling mode backed only by fictional payment fixtures. The allowlisted tools are read-only; they cannot access PayPal or execute payment operations.
 - **Local infrastructure:** PostgreSQL and Redis Compose services bind to loopback; Redis is reserved for future coordination.
 
 The public home dashboard remains a clearly labeled sample-data demo. Use **Secure workspace** to sign in and work with persisted cases.
@@ -85,6 +86,10 @@ Requirements: Node.js 20.9+, .NET 10 SDK, Python 3.12+, and Docker Compose.
    ```
 
    Open `http://localhost:3000`, sign in, and go to **Secure workspace**. Create a case using a sandbox PayPal order ID. Analysis requires both the configured sandbox app and AI service. The AI service calls the configured Databricks model with Unity Gateway's Responses API.
+
+   To try the agent demo, set `DEMO_AGENT_ENABLED=true` and `AI_SERVICE_URL=http://localhost:8000` in `.env`, then open `http://localhost:3000/agent-playground`. Simulation mode works without Databricks. Databricks AI mode requires the protected Python service, `DATABRICKS_TOKEN`, `DATABRICKS_HOST`, and a valid model permission. The Next.js proxy sends `AI_SERVICE_KEY` server-side only; do not expose it through a `NEXT_PUBLIC_*` variable.
+
+The public Vercel frontend can run Simulation mode without any backend. Databricks AI mode additionally requires deploying the Python AI service to a reachable HTTPS host with `DEMO_AGENT_ENABLED=true`, then setting `AI_SERVICE_URL` and `AI_SERVICE_KEY` as server-side Vercel environment variables. Vercel does not host this Python service as part of the frontend deployment. The proxy applies a small per-instance request limit; use provider-side/network rate limiting for production deployments.
 
 If OIDC, PayPal sandbox, or AI settings are absent, related functions return an explicit configuration error rather than sample or success-shaped data. The local Compose stack does not include an identity provider.
 

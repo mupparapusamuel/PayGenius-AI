@@ -165,5 +165,133 @@ class InvestigationAnalysisTests(unittest.TestCase):
         self.assertNotIn(settings["AI_SERVICE_KEY"], str(readiness))
 
 
+class DemoAgentTests(unittest.TestCase):
+    service_key = "test-service-key-with-at-least-thirty-two-characters"
+
+    def setUp(self) -> None:
+        self.client = TestClient(main.app)
+
+    def test_demo_tools_only_read_synthetic_records(self) -> None:
+        summary = main.run_demo_tool("get_demo_payment_summary", {})
+        self.assertEqual(summary["payment_count"], 5)
+        self.assertEqual(summary["captured_total_usd"], 217.5)
+
+        failed = main.run_demo_tool("list_demo_payments", {"status": "failed", "limit": 5})
+        self.assertEqual([item["reference"] for item in failed], ["DEMO-1003"])
+
+        payment = main.run_demo_tool("get_demo_payment", {"reference": "demo-1003"})
+        self.assertEqual(payment["status"], "failed")
+
+        duplicates = main.run_demo_tool("find_demo_duplicates", {})
+        self.assertEqual(len(duplicates), 1)
+        self.assertEqual(
+            [item["reference"] for item in duplicates[0]["payments"]],
+            ["DEMO-1001", "DEMO-1002"],
+        )
+        self.assertTrue(all(item.get("sample_data") for item in duplicates))
+
+    def test_demo_tool_rejects_invalid_arguments(self) -> None:
+        with self.assertRaises(ValueError):
+            main.run_demo_tool("list_demo_payments", {"status": "refunded", "limit": 5})
+        with self.assertRaises(ValueError):
+            main.run_demo_tool("get_demo_payment", {})
+        with self.assertRaises(ValueError):
+            main.run_demo_tool("delete_payment", {})
+
+    def test_demo_agent_is_disabled_by_default(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"AI_SERVICE_KEY": self.service_key, "DEMO_AGENT_ENABLED": "false"},
+            clear=False,
+        ):
+            response = self.client.post(
+                "/v1/demo/agent",
+                headers={"X-Service-Key": self.service_key},
+                json={"message": "Summarize sample payments"},
+            )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_demo_agent_runs_bounded_function_call_cycle(self) -> None:
+        first_response = SimpleNamespace(output=[self.function_call("call-summary")], output_text="")
+        final_response = SimpleNamespace(output=[], output_text="There are five sample payments.")
+        fake_client = self.model_client([first_response, final_response])
+        environment = {
+            "AI_SERVICE_KEY": self.service_key,
+            "DEMO_AGENT_ENABLED": "true",
+            "DATABRICKS_TOKEN": "test-databricks-token-with-more-than-thirty-two-characters",
+            "DATABRICKS_HOST": "https://workspace.example.databricks.com",
+            "DATABRICKS_MODEL": "system.ai.gpt-oss-120b",
+        }
+
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch("app.main.AsyncOpenAI", return_value=fake_client),
+        ):
+            response = self.client.post(
+                "/v1/demo/agent",
+                headers={"X-Service-Key": self.service_key},
+                json={"message": "Summarize the sample payments"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["reply"], "There are five sample payments.")
+        self.assertEqual(response.json()["tool_trace"][0]["tool"], "get_demo_payment_summary")
+        self.assertEqual(response.json()["tool_trace"][0]["result"]["payment_count"], 5)
+        self.assertTrue(response.json()["sample_data"])
+        self.assertEqual(fake_client.responses.create.await_count, 2)
+
+    def test_demo_agent_enforces_iteration_and_tool_call_limits(self) -> None:
+        repeated_calls = [
+            SimpleNamespace(output=[self.function_call(f"call-{index}")], output_text="")
+            for index in range(4)
+        ]
+        too_many_tools = SimpleNamespace(
+            output=[self.function_call(f"call-{index}") for index in range(9)],
+            output_text="",
+        )
+        for responses, expected_calls in ((repeated_calls, 4), ([too_many_tools], 1)):
+            with self.subTest(expected_calls=expected_calls):
+                fake_client = self.model_client(responses)
+                with (
+                    patch.dict(os.environ, self.databricks_environment(), clear=False),
+                    patch("app.main.AsyncOpenAI", return_value=fake_client),
+                ):
+                    response = self.client.post(
+                        "/v1/demo/agent",
+                        headers={"X-Service-Key": self.service_key},
+                        json={"message": "Summarize sample data"},
+                    )
+
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(fake_client.responses.create.await_count, expected_calls)
+
+    def function_call(self, call_id: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            model_dump=lambda **_: {
+                "type": "function_call",
+                "name": "get_demo_payment_summary",
+                "arguments": "{}",
+                "call_id": call_id,
+            }
+        )
+
+    def model_client(self, responses: list[SimpleNamespace]) -> AsyncMock:
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = None
+        client.responses.create = AsyncMock(side_effect=responses)
+        return client
+
+    def databricks_environment(self) -> dict[str, str]:
+        return {
+            "AI_SERVICE_KEY": self.service_key,
+            "DEMO_AGENT_ENABLED": "true",
+            "DATABRICKS_TOKEN": "test-databricks-token-with-more-than-thirty-two-characters",
+            "DATABRICKS_HOST": "https://workspace.example.databricks.com",
+            "DATABRICKS_MODEL": "system.ai.gpt-oss-120b",
+        }
+
+
 if __name__ == "__main__":
     unittest.main()
